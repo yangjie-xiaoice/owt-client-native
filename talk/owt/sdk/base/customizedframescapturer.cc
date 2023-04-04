@@ -1,6 +1,7 @@
 // Copyright (C) <2018> Intel Corporation
 //
 // SPDX-License-Identifier: Apache-2.0
+#include <chrono>
 #include <algorithm>
 #include "api/make_ref_counted.h"
 #include "talk/owt/sdk/base/customizedframescapturer.h"
@@ -14,6 +15,7 @@
 #include "webrtc/rtc_base/thread.h"
 #include "webrtc/system_wrappers/include/clock.h"
 
+using namespace std::chrono;
 using namespace rtc;
 namespace owt {
 namespace base {
@@ -62,10 +64,19 @@ class CustomizedFramesCapturer::CustomizedFramesThread
 
   void TryReadFrame() {
     if (capturer_) {
+      int64_t read_time_ms = duration_cast<milliseconds>(steady_clock().now().time_since_epoch()).count();
       capturer_->ReadFrame();
-      rtc::Thread::Current()->PostDelayedTask(
+      int64_t now = duration_cast<milliseconds>(steady_clock().now().time_since_epoch()).count();
+      wait_ms = waiting_time_ms_ - now + read_time_ms;
+      if (wait_ms > 0)
+      {
+        rtc::Thread::Current()->PostDelayedTask(
           [this] { TryReadFrame(); },
-          webrtc::TimeDelta::Millis(waiting_time_ms_));
+          webrtc::TimeDelta::Millis(wait_ms));
+      }
+      else {
+        rtc::Thread::Current()->PostTask([this] { TryReadFrame(); });
+      }
     } else {
       rtc::Thread::Current()->Quit();
     }
