@@ -67,7 +67,7 @@ class CustomizedFramesCapturer::CustomizedFramesThread
       int64_t read_time_ms = duration_cast<milliseconds>(steady_clock().now().time_since_epoch()).count();
       capturer_->ReadFrame();
       int64_t now = duration_cast<milliseconds>(steady_clock().now().time_since_epoch()).count();
-      wait_ms = waiting_time_ms_ - now + read_time_ms;
+      int64_t wait_ms = waiting_time_ms_ - now + read_time_ms;
       if (wait_ms > 0)
       {
         rtc::Thread::Current()->PostDelayedTask(
