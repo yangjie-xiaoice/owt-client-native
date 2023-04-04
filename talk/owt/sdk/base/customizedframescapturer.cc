@@ -35,6 +35,8 @@ class CustomizedFramesCapturer::CustomizedFramesThread
     RTC_CHECK_GT(fps, 0);
     finished_ = false;
     waiting_time_ms_ = 1000 / fps;
+    first_frame_time_ms_ = 0;
+    next_frame_ = 0;
   }
   virtual ~CustomizedFramesThread() { Stop(); }
 
@@ -47,6 +49,8 @@ class CustomizedFramesCapturer::CustomizedFramesThread
     // Stop() is called externally or Quit() is called by OnMessage().
     // Before returning, cleanup any thread-sensitive resources.
     if (capturer_) {
+      first_frame_time_ms_ = duration_cast<milliseconds>(steady_clock().now().time_since_epoch()).count();
+      next_frame_ += 1;
       capturer_->ReadFrame();
       rtc::Thread::Current()->PostTask([this] { TryReadFrame(); });
       rtc::Thread::Current()->ProcessMessages(kForever);
@@ -64,10 +68,10 @@ class CustomizedFramesCapturer::CustomizedFramesThread
 
   void TryReadFrame() {
     if (capturer_) {
-      int64_t read_time_ms = duration_cast<milliseconds>(steady_clock().now().time_since_epoch()).count();
+      next_frame_ += 1;
       capturer_->ReadFrame();
       int64_t now = duration_cast<milliseconds>(steady_clock().now().time_since_epoch()).count();
-      int64_t wait_ms = waiting_time_ms_ - now + read_time_ms;
+      int64_t wait_ms = std::floor(waiting_time_ms_ * next_frame_ - (now - first_frame_time_ms_));
       if (wait_ms > 0)
       {
         rtc::Thread::Current()->PostDelayedTask(
@@ -86,7 +90,9 @@ class CustomizedFramesCapturer::CustomizedFramesThread
   CustomizedFramesCapturer* capturer_;
   mutable webrtc::Mutex crit_;
   bool finished_;
-  int waiting_time_ms_;
+  double waiting_time_ms_;
+  int64_t first_frame_time_ms_;
+  int64_t next_frame_;
 };
 
 /////////////////////////////////////////////////////////////////////
