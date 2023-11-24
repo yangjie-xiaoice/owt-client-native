@@ -280,9 +280,9 @@ bool CustomizedAudioCapturer::RecThreadProcess() {
       mutex_.Lock();
     }
     mutex_.Unlock();
-    if (wait_ms_ > 0)
+    if (wait_ms > 0)
     {
-      SleepMs(wait_ms_);
+      SleepMs(wait_ms);
     }
   }
   return true;
