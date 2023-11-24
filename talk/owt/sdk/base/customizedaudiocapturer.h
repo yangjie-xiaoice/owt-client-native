@@ -114,11 +114,8 @@ class CustomizedAudioCapturer : public AudioDeviceGeneric {
   size_t recording_buffer_size_;
   rtc::PlatformThread thread_rec_;
   bool recording_;
-  uint64_t last_call_record_millis_;
-  uint64_t last_thread_rec_end_time_;
-  Clock* clock_;
-  int64_t need_sleep_ms_;
-  int64_t real_sleep_ms_;
+  int64_t first_frame_time_ms_;
+  int64_t next_frame_;
 };
 }
 }
