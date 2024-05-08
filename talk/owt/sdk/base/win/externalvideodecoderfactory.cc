@@ -2,6 +2,7 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
+#include "talk/owt/sdk/base/win/externalvideodecoderfactory.h"
 #include <vector>
 #include "absl/strings/match.h"
 #include "media/base/codec.h"
@@ -9,16 +10,24 @@
 #include "modules/video_coding/codecs/h264/include/h264.h"
 #include "modules/video_coding/codecs/vp8/include/vp8.h"
 #include "modules/video_coding/codecs/vp9/include/vp9.h"
-#include "webrtc/rtc_base/checks.h"
 #include "talk/owt/sdk/base/codecutils.h"
-#include "talk/owt/sdk/base/win/msdkvideodecoderfactory.h"
+#ifdef OWT_USE_FFMPEG
+#include "talk/owt/sdk/base/win/d3d11_video_decoder.h"
+#include "talk/owt/sdk/base/win/ffmpeg_decoder_impl.h"
+#endif
+#ifdef OWT_USE_MSDK
 #include "talk/owt/sdk/base/win/msdkvideodecoder.h"
-
+#endif
+#include "system_wrappers/include/field_trial.h"
+#include "webrtc/rtc_base/checks.h"
+#include "webrtc/rtc_base/logging.h"
 
 namespace owt {
 namespace base {
 
-MSDKVideoDecoderFactory::MSDKVideoDecoderFactory(ID3D11Device* d3d11_device_external) {
+ExternalVideoDecoderFactory::ExternalVideoDecoderFactory(ID3D11Device* d3d11_device_external) {
+  range_extension_enabled_ =
+      webrtc::field_trial::IsEnabled("OWT-RangeExtension");
   supported_codec_types_.clear();
 
   bool is_vp8_hw_supported = false, is_vp9_hw_supported = false;
@@ -64,9 +73,10 @@ MSDKVideoDecoderFactory::MSDKVideoDecoderFactory(ID3D11Device* d3d11_device_exte
   }
 }
 
-MSDKVideoDecoderFactory::~MSDKVideoDecoderFactory() {}
+ExternalVideoDecoderFactory::~ExternalVideoDecoderFactory() {}
 
-std::unique_ptr<webrtc::VideoDecoder> MSDKVideoDecoderFactory::CreateVideoDecoder(
+std::unique_ptr<webrtc::VideoDecoder>
+ExternalVideoDecoderFactory::CreateVideoDecoder(
     const webrtc::SdpVideoFormat& format) {
   bool vp9_hw = false, vp8_hw = false, av1_hw = false, h264_hw = false;
 #ifdef WEBRTC_USE_H265
@@ -84,7 +94,6 @@ std::unique_ptr<webrtc::VideoDecoder> MSDKVideoDecoderFactory::CreateVideoDecode
 #ifdef WEBRTC_USE_H265
     else if (codec == webrtc::kVideoCodecH265) {
       h265_hw = true;
-      RTC_LOG(LS_INFO) << "Enabling hardware hevc.";
     }
 #endif
   }
@@ -92,25 +101,33 @@ std::unique_ptr<webrtc::VideoDecoder> MSDKVideoDecoderFactory::CreateVideoDecode
     return webrtc::VP9Decoder::Create();
   } else if (absl::EqualsIgnoreCase(format.name, cricket::kVp8CodecName) &&
              !vp8_hw) {
-    RTC_LOG(LS_INFO) << "Not supporting HW VP8 decoder. Requesting SW decoding.";
+    RTC_LOG(LS_INFO)
+        << "Not supporting HW VP8 decoder. Requesting SW decoding.";
     return webrtc::VP8Decoder::Create();
-  } else if (absl::EqualsIgnoreCase(format.name, cricket::kH264CodecName) && !h264_hw) {
+  }  else if (absl::EqualsIgnoreCase(format.name, cricket::kH264CodecName) &&
+           !h264_hw) {
     return webrtc::H264Decoder::Create();
   } else if (absl::EqualsIgnoreCase(format.name, cricket::kAv1CodecName) &&
-             !av1_hw) {
+           !av1_hw) {
     return webrtc::CreateDav1dDecoder();
   }
-#ifdef WEBRTC_USE_H265
-  // This should not happen. We do not return here but preceed with HW decoder.
-  else if (absl::EqualsIgnoreCase(format.name, cricket::kH265CodecName) && !h265_hw) {
-    RTC_LOG(LS_ERROR) << "Returning null hevc encoder.";
-  }
+  if (vp8_hw || vp9_hw || h264_hw || h265_hw || av1_hw) {
+#if defined(OWT_USE_FFMPEG)
+    if (range_extension_enabled_) {
+      return std::make_unique<FFMpegDecoderImpl>();
+    } else {
+      return owt::base::D3D11VideoDecoder::Create(cricket::VideoCodec(format));
+    }
 #endif
+#if defined(OWT_USE_MSDK)
+    return owt::base::MSDKVideoDecoder::Create(cricket::VideoCodec(format));
+#endif
+  }
 
-  return MSDKVideoDecoder::Create(cricket::VideoCodec(format));
+  RTC_CHECK_NOTREACHED();
 }
 
- std::vector<webrtc::SdpVideoFormat> MSDKVideoDecoderFactory::GetSupportedFormats()
+ std::vector<webrtc::SdpVideoFormat> ExternalVideoDecoderFactory::GetSupportedFormats()
     const {
   std::vector<webrtc::SdpVideoFormat> supported_codecs;
   supported_codecs.push_back(webrtc::SdpVideoFormat(cricket::kVp8CodecName));

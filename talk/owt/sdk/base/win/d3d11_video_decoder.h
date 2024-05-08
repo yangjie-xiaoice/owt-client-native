@@ -2,8 +2,8 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
-#ifndef OWT_BASE_WIN_D3D11VA_H264_DECODER_H_
-#define OWT_BASE_WIN_D3D11VA_H264_DECODER_H_
+#ifndef OWT_BASE_WIN_D3D11VA_DECODER_H_
+#define OWT_BASE_WIN_D3D11VA_DECODER_H_
 
 #include <map>
 #include <memory>
@@ -29,18 +29,21 @@ extern "C" {
 #include "talk/owt/sdk/base/win/d3dnativeframe.h"
 #include "talk/owt/sdk/include/cpp/owt/base/videorendererinterface.h"
 
+namespace webrtc {
+class Clock;
+}
+
 namespace owt {
 namespace base {
 
-class H264DXVADecoderImpl : public webrtc::H264Decoder {
+class D3D11VideoDecoder : public webrtc::VideoDecoder {
  public:
-  static std::unique_ptr<H264DXVADecoderImpl> Create(
+  static std::unique_ptr<D3D11VideoDecoder> Create(
       cricket::VideoCodec format);
-  H264DXVADecoderImpl(ID3D11Device* external_device);
-  ~H264DXVADecoderImpl() override;
+  D3D11VideoDecoder(ID3D11Device* external_device);
+  ~D3D11VideoDecoder() override;
 
-  int32_t InitDecode(const webrtc::VideoCodec* codec_settings,
-                     int32_t number_of_cores) override;
+  bool Configure(const Settings& settings) override;
   int32_t Release() override;
 
   int32_t RegisterDecodeCompleteCallback(
@@ -68,13 +71,13 @@ class H264DXVADecoderImpl : public webrtc::H264Decoder {
   bool has_reported_init_;
   bool has_reported_error_;
 
-  // 
   CComPtr<ID3D11Device> d3d11_device_;
   CComPtr<ID3D11DeviceContext> d3d11_device_context_;
   CComPtr<ID3D11VideoDevice> d3d11_video_device_;
   CComPtr<ID3D11VideoContext> d3d11_video_context_;
   CComQIPtr<IDXGIAdapter> m_padapter_;
   CComPtr<IDXGIFactory2> m_pdxgi_factory_;
+  Settings settings_;
   std::unique_ptr<D3D11VAHandle> surface_handle_;
   std::vector<uint8_t> current_side_data_;
   std::unordered_map<uint32_t, std::vector<uint8_t>> side_data_list_;
@@ -82,11 +85,11 @@ class H264DXVADecoderImpl : public webrtc::H264Decoder {
   std::vector<uint8_t> current_cursor_data_;
   AVBufferRef* hw_device_ctx = nullptr;
   AVCodecContext* decoder_ctx = nullptr;
-  AVCodec* decoder = nullptr;
+  const AVCodec* decoder = nullptr;
   webrtc::Clock* clock_ = nullptr;
 };
 
 }  // namespace base
 }  // namespace owt
 
-#endif  // OWT_BASE_WIN_D3D11VA_H264_DECODER_H_
+#endif  // OWT_BASE_WIN_D3D11VA_DECODER_H_

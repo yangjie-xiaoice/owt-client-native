@@ -22,8 +22,8 @@
 #include "webrtc/rtc_base/physical_socket_server.h"
 #if defined(WEBRTC_WIN)
 #include <d3d11.h>
-#include "talk/owt/sdk/base/win/msdkvideodecoderfactory.h"
-#include "talk/owt/sdk/base/win/msdkvideoencoderfactory.h"
+#include "talk/owt/sdk/base/win/externalvideodecoderfactory.h"
+#include "talk/owt/sdk/base/win/externalvideoencoderfactory.h"
 #elif defined(WEBRTC_LINUX)
 #include "talk/owt/sdk/base/linux/msdkvideodecoderfactory.h"
 #elif defined(WEBRTC_IOS)
@@ -149,6 +149,9 @@ void PeerConnectionDependencyFactory::
   if (GlobalConfiguration::GetFlexFecEnabled()) {
     field_trial_ += "OWT-FlexFEC/Enabled/";
   }
+  if (GlobalConfiguration::GetRangeExtensionEnabled()) {
+    field_trial_ += "OWT-RangeExtension/Enabled/";
+  }
   int delay_bwe_weight = GlobalConfiguration::GetDelayBasedBweWeight();
   field_trial_ +=
       "OWT-DelayBweWeight/" + std::to_string(delay_bwe_weight) + "/";
@@ -190,8 +193,12 @@ void PeerConnectionDependencyFactory::
   if (encoded_frame_) {
     encoder_factory.reset(new EncodedVideoEncoderFactory());
   } else if (render_hardware_acceleration_enabled_) {
-#ifdef OWT_USE_MSDK
-    encoder_factory.reset(new MSDKVideoEncoderFactory());
+#if defined(OWT_CG_CLIENT)
+    // CG client app takes care of external encoder. If it's expected to receive
+    // video streams, an encoder must be provided.
+    encoder_factory.reset(new ExternalVideoEncoderFactory());
+#elif defined(WEBRTC_WIN) && defined(OWT_USE_MSDK)
+    encoder_factory.reset(new ExternalVideoEncoderFactory());
 #else
     // For Linux HW encoder pending verification.
     encoder_factory = webrtc::CreateBuiltinVideoEncoderFactory();
@@ -204,8 +211,14 @@ void PeerConnectionDependencyFactory::
     decoder_factory.reset(new CustomizedVideoDecoderFactory(
         GlobalConfiguration::GetCustomizedVideoDecoder()));
   } else if (render_hardware_acceleration_enabled_) {
-#ifdef OWT_USE_MSDK
-    decoder_factory.reset(new MSDKVideoDecoderFactory(nullptr));
+#if defined(OWT_USE_MSDK) || defined(OWT_USE_FFMPEG) || defined(OWT_CG_SERVER)
+#if defined(WEBRTC_WIN)
+    decoder_factory.reset(new ExternalVideoDecoderFactory(nullptr));
+#elif !defined(OWT_CG_SERVER)
+    // Linux CG server is supposed to have external decoder so it can receives
+    // video streams from client.
+    decoder_factory.reset(new ExternalVideoDecoderFactory());
+#endif
 #else
     decoder_factory = webrtc::CreateBuiltinVideoDecoderFactory();
 #endif

@@ -11,6 +11,7 @@ declare_args() {
   include_internal_audio_device = true
   owt_msdk_lib_root = ""
   owt_msdk_header_root = ""
+  owt_sio_header_root = ""
 }
 
 # Introduced for using libvpx config files. We only enable libvpx rate
@@ -71,6 +72,8 @@ config("owt_common") {
 static_library("owt_deps") {
   deps = [
     "//third_party/webrtc/api:create_peerconnection_factory",
+    "//third_party/webrtc/api/video_codecs:builtin_video_decoder_factory",
+    "//third_party/webrtc/api/video_codecs:builtin_video_encoder_factory",
     "//third_party/webrtc/rtc_base:rtc_json",
   ]
 
@@ -87,6 +90,8 @@ static_library("owt_deps") {
 
 if (!is_ios) {
   if (is_component_build) {
+    # Component build is only supported by cloud gaming mode on Linux.
+    assert(owt_cg_server)
     shared_library("owt") {
       visibility = [ "*" ]
       deps = [
@@ -102,13 +107,16 @@ if (!is_ios) {
     static_library("owt") {
       deps = [
         ":owt_sdk_base",
-        ":owt_sdk_conf",
         ":owt_sdk_p2p",
         "//third_party/webrtc",
         "//third_party/webrtc:webrtc",
         "//third_party/webrtc/api:libjingle_peerconnection_api",
       ]
+      if (!owt_cg_server && !owt_cg_client) {
+        deps += [ ":owt_sdk_conf" ]
+      }
       complete_static_lib = true
+      configs -= [ "//build/config/compiler:thin_archive" ]
     }
   }
 }
@@ -219,6 +227,13 @@ static_library("owt_sdk_base") {
 
   defines = [ "USE_BUILTIN_SW_CODECS" ]
 
+  if (owt_cg_server) {
+    defines += [ "OWT_CG_SERVER" ]
+  }
+  if (owt_cg_client) {
+    defines += [ "OWT_CG_CLIENT" ]
+  }
+
   if (owt_msdk_header_root != "") {
     include_dirs += [ owt_msdk_header_root ]
   }
@@ -226,6 +241,16 @@ static_library("owt_sdk_base") {
   if (rtc_include_internal_audio_device) {
     defines += [ "WEBRTC_INCLUDE_INTERNAL_AUDIO_DEVICE" ]
   }
+
+  if (owt_ffmpeg_root != "") {
+    include_dirs += [ owt_ffmpeg_root + "/include" ]
+    lib_dirs = [ owt_ffmpeg_root + "/lib" ]
+    libs = [
+      "avcodec",
+      "avutil",
+    ]
+  }
+
   if (rtc_use_x11) {
     defines += [ "WEBRTC_USE_X11" ]
   }
@@ -282,6 +307,17 @@ static_library("owt_sdk_base") {
       "sdk/base/win/videorendererd3d11.cc",
       "sdk/base/win/videorendererd3d11.h",
     ]
+    if (owt_msdk_header_root != "" || owt_ffmpeg_root != "" || owt_cg_server) {
+      sources += [
+        "sdk/base/win/externalvideodecoderfactory.cc",
+        "sdk/base/win/externalvideodecoderfactory.h",
+        "sdk/base/win/externalvideoencoderfactory.cc",
+        "sdk/base/win/externalvideoencoderfactory.h",
+        "sdk/base/win/mediacapabilities.cc",
+        "sdk/base/win/mediacapabilities.h",
+        "sdk/base/win/vpedefs.h",
+      ]
+    }
     if (owt_msdk_header_root != "") {
       sources += [
         "sdk/base/win/base_allocator.cc",
@@ -290,23 +326,16 @@ static_library("owt_sdk_base") {
         "sdk/base/win/d3d11_allocator.h",
         "sdk/base/win/d3d_allocator.cc",
         "sdk/base/win/d3d_allocator.h",
-        "sdk/base/win/mediacapabilities.cc",
-        "sdk/base/win/mediacapabilities.h",
         "sdk/base/win/msdkvideobase.cc",
         "sdk/base/win/msdkvideobase.h",
         "sdk/base/win/msdkvideodecoder.cc",
         "sdk/base/win/msdkvideodecoder.h",
-        "sdk/base/win/msdkvideodecoderfactory.cc",
-        "sdk/base/win/msdkvideodecoderfactory.h",
         "sdk/base/win/msdkvideoencoder.cc",
         "sdk/base/win/msdkvideoencoder.h",
-        "sdk/base/win/msdkvideoencoderfactory.cc",
-        "sdk/base/win/msdkvideoencoderfactory.h",
         "sdk/base/win/sysmem_allocator.cc",
         "sdk/base/win/sysmem_allocator.h",
         "sdk/base/win/vp9ratecontrol.cc",
         "sdk/base/win/vp9ratecontrol.h",
-        "sdk/base/win/vpedefs.h",
       ]
       public_deps += [
         "//third_party/libvpx",
@@ -339,6 +368,19 @@ static_library("owt_sdk_base") {
       "sdk/base/linux/videorenderlinux.h",
     ]
   }
+
+  if (owt_ffmpeg_root != "") {
+    if (is_win) {
+      sources += [
+        "sdk/base/win/d3d11_video_decoder.cc",
+        "sdk/base/win/d3d11_video_decoder.h",
+        "sdk/base/win/ffmpeg_decoder_impl.cc",
+        "sdk/base/win/ffmpeg_decoder_impl.h",
+      ]
+    }
+    defines += [ "OWT_USE_FFMPEG" ]
+  }
+
   if (!is_ios) {
     sources += [
       "sdk/base/customizedvideodecoderfactory.cc",
@@ -374,7 +416,6 @@ static_library("owt_sdk_p2p") {
     "sdk/include/cpp/owt/p2p/p2pclient.h",
     "sdk/include/cpp/owt/p2p/p2ppublication.h",
     "sdk/include/cpp/owt/p2p/p2psignalingchannelinterface.h",
-    "sdk/include/cpp/owt/p2p/p2psignalingreceiverinterface.h",
     "sdk/include/cpp/owt/p2p/p2psignalingsenderinterface.h",
     "sdk/p2p/p2pclient.cc",
     "sdk/p2p/p2ppeerconnectionchannel.cc",
@@ -389,8 +430,11 @@ static_library("owt_sdk_p2p") {
     configs -= [ "//build/config/clang:find_bad_constructs" ]
   }
   configs += [ ":owt_common" ]
-  if (owt_cloud_gaming) {
-    defines = [ "OWT_CLOUD_GAMING" ]
+  if (owt_cg_server) {
+    defines = [ "OWT_CG_SERVER" ]
+  }
+  if (owt_cg_client) {
+    defines = [ "OWT_CG_CLIENT" ]
   }
 }
 static_library("owt_sdk_conf") {
@@ -403,6 +447,9 @@ static_library("owt_sdk_conf") {
     "sdk/include/cpp",
     "//third_party",
   ]
+  if (owt_sio_header_root != "") {
+    include_dirs += [ owt_sio_header_root ]
+  }
   sources = [
     "sdk/conference/conferenceclient.cc",
     "sdk/conference/conferencepeerconnectionchannel.cc",
@@ -452,6 +499,9 @@ if (is_ios) {
       "sdk/include/cpp",
       "sdk/include/objc",
     ]
+    if (owt_sio_header_root != "") {
+      include_dirs += [ owt_sio_header_root ]
+    }
     configs += [
       "//build/config/compiler:enable_arc",
       ":owt_sdk_objc_warnings_config",

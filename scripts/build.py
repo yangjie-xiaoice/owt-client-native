@@ -53,7 +53,7 @@ TEST_ARCH = 'x64'  # Tests run on simulator
 TEST_SCHEME = 'debug'
 TEST_SIMULATOR_DEVICE = 'iPhone X'
 
-def gngen(arch, ssl_root, scheme):
+def gngen(arch, sio_root, ssl_root, scheme):
   gn_args = 'target_os="ios" target_cpu="%s" is_component_build=false '\
       'ios_enable_code_signing=false ios_deployment_target="11.0" '\
       'rtc_enable_symbol_export=true enable_dsyms=true use_custom_libcxx=false '\
@@ -62,9 +62,12 @@ def gngen(arch, ssl_root, scheme):
     gn_args += (' is_debug=false enable_stripping=true')
   else:
     gn_args += (' is_debug=true')
+  if sio_root:
+    # If sio_root is not specified, conference SDK is not able to build.
+    gn_args += (' owt_sio_header_root="%s"' % (sio_root + '/include'))
   if ssl_root:
-    gn_args += (' owt_use_openssl=true owt_openssl_header_root="%s" '\
-        'owt_openssl_lib_root="%s"'%(ssl_root+'/include',ssl_root+'/lib'))
+    gn_args += (' rtc_build_ssl=false rtc_ssl_root="%s" '\
+        'libsrtp_ssl_root="%s"'%(ssl_root+'/include', ssl_root+'/include'))
   ret = subprocess.call(['gn', 'gen', getoutputpath(arch, scheme), '--args=%s' % gn_args],
                         cwd=HOME_PATH, shell=False)
   if ret == 0:
@@ -89,12 +92,6 @@ def copyheaders(headers_target_folder):
     for file_name in file_names:
       copy_framework_header.Process(os.path.join(
           HEADER_PATH, file_name), os.path.join(headers_target_folder, file_name))
-
-def getexternalliblist(ssl_root):
-  libs = []
-  libs.append('%s/lib/libcrypto.a'%ssl_root)
-  libs.append('%s/lib/libssl.a'%ssl_root)
-  return libs
 
 def buildframework():
   '''Create OWT.framework in out/'''
@@ -125,7 +122,7 @@ def buildwebrtcframework(arch_list, scheme):
     subprocess.call(cmd, cwd=HOME_PATH)
     return True
 
-def dist(arch_list, scheme, ssl_root):
+def dist(arch_list, scheme):
   buildwebrtcframework(arch_list, scheme)
   out_lib_path = os.path.join(OUT_PATH, OUT_LIB_NAME)
   if os.path.exists(out_lib_path):
@@ -136,9 +133,6 @@ def dist(arch_list, scheme, ssl_root):
   for target_arch in arch_list:
     for sdk_target in SDK_TARGETS:
       argu.append('%s/obj/talk/owt/lib%s.a'%(getoutputpath(target_arch, scheme), sdk_target))
-  # Add external libs.
-  if ssl_root:
-    argu.extend(getexternalliblist(ssl_root))
   subprocess.call(argu, cwd=HOME_PATH)
   if scheme == 'release':
     subprocess.call(['strip', '-S', '-x', '%s/out/libowt.a'%HOME_PATH],
@@ -171,8 +165,9 @@ def runtest(ssl_root):
 def main():
   parser = argparse.ArgumentParser()
   parser.add_argument('--arch', default='arm64', dest='target_arch',
-      help='Target architectures. Could be multiple values seperated by comma.')
-  parser.add_argument('--ssl_root', help='Path for OpenSSL.')
+      help='Target architectures. Could be multiple values separated by comma.')
+  parser.add_argument('--ssl_root', help='Path for OpenSSL. Headers in include sub-folder, libcrypto.a and libssl.a in lib sub-folder.')
+  parser.add_argument('--sio_root', required=True, help='Path to Socket.IO cpp. Headers in include sub-folder, libsioclient_tls.a in lib sub-folder.')
   parser.add_argument('--scheme', default='debug',
       help='Schemes for building. Supported value: debug, release')
   parser.add_argument('--skip_gn_gen', default=False, action='store_true',
@@ -195,14 +190,14 @@ def main():
       return 1
     else:
       if not opts.skip_gn_gen:
-        if not gngen(arch_item, opts.ssl_root, opts.scheme):
+        if not gngen(arch_item, opts.sio_root, opts.ssl_root, opts.scheme):
           return 1
       if not ninjabuild(arch_item, opts.scheme, SDK_TARGETS):
         return 1
-  dist(opts.arch, opts.scheme, opts.ssl_root)
+  dist(opts.arch, opts.scheme)
   if not opts.skip_tests:
     if not opts.skip_gn_gen:
-      if not gngen(TEST_ARCH, opts.ssl_root, TEST_SCHEME):
+      if not gngen(TEST_ARCH, opts.sio_root, opts.ssl_root, TEST_SCHEME):
         return 1
     if not runtest(opts.ssl_root):
       return 1

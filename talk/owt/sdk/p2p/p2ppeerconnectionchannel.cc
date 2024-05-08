@@ -375,17 +375,9 @@ void P2PPeerConnectionChannel::SendSignalingMessage(
       });
 }
 void P2PPeerConnectionChannel::OnIncomingSignalingMessage(
-    const std::string& message) {
+    const Json::Value& json_message) {
   if (ended_)
     return;
-  RTC_LOG(LS_INFO) << "OnIncomingMessage: " << message;
-  RTC_DCHECK(!message.empty());
-  Json::Reader reader;
-  Json::Value json_message;
-  if (!reader.parse(message, json_message)) {
-    RTC_LOG(LS_WARNING) << "Cannot parse incoming message.";
-    return;
-  }
   std::string message_type;
   rtc::GetStringFromJsonObject(json_message, kMessageTypeKey, &message_type);
   if (message_type.empty()) {
@@ -767,6 +759,7 @@ void P2PPeerConnectionChannel::OnIceConnectionChange(
       }).detach();
       break;
     case webrtc::PeerConnectionInterface::kIceConnectionClosed:
+      TriggerOnPeerConnectionClosed();
       TriggerOnStopped();
       CleanLastPeerConnection();
       break;
@@ -960,6 +953,14 @@ void P2PPeerConnectionChannel::TriggerOnStopped() {
   for (std::vector<P2PPeerConnectionChannelObserver*>::iterator it =
        observers_.begin(); it != observers_.end(); it++) {
     (*it)->OnStopped(remote_id_);
+  }
+}
+
+void P2PPeerConnectionChannel::TriggerOnPeerConnectionClosed() {
+  for (std::vector<P2PPeerConnectionChannelObserver*>::iterator it =
+           observers_.begin();
+       it != observers_.end(); it++) {
+    (*it)->OnPeerConnectionClosed(remote_id_);
   }
 }
 

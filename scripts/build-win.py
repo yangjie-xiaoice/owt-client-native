@@ -4,8 +4,10 @@
 
 '''Script to build WebRTC libs on Windows.
 
-It builds OWT Windows SDK library which includes WebRTC lib, OWT base, p2p and conference
-lib.
+This script is a shortcut for building OWT Windows SDK library which includes
+WebRTC lib, OWT base, p2p and conference lib. It doesn't cover all
+configurations. Please update GN args and use ninja build manually if you have
+special configurations.
 
 Output lib is located in out/owt-debug(release).lib.
 '''
@@ -24,18 +26,14 @@ PARALLEL_TEST_TARGET_LIST = ['rtc_unittests', 'video_engine_tests']
 NONPARALLEL_TEST_TARGET_LIST = ['webrtc_nonparallel_tests']
 
 GN_ARGS = [
-    'rtc_use_h264=true',
-    'ffmpeg_branding="Chrome"',
-    'rtc_use_h265=true',
     'is_component_build=false',
     'use_lld=false',
-    'enable_libaom=true',
     'rtc_build_examples=false',
     'treat_warnings_as_errors=false',
     ]
 
 
-def gngen(arch, ssl_root, msdk_root, quic_root, scheme, tests, runtime):
+def gngen(arch, sio_root, ffmpeg_root, ssl_root, msdk_root, quic_root, scheme, tests, runtime, cg_server, cg_client, fake_audio):
     gn_args = list(GN_ARGS)
     gn_args.append('target_cpu="%s"' % arch)
     using_llvm = False
@@ -53,13 +51,9 @@ def gngen(arch, ssl_root, msdk_root, quic_root, scheme, tests, runtime):
         gn_args.append('is_debug=true')
         gn_args.append('enable_iterator_debugging=true')
     if ssl_root:
-        gn_args.append('owt_use_openssl=true')
-        gn_args.append('owt_openssl_header_root="%s"' % (ssl_root + r'\include'))
-        gn_args.append('owt_openssl_lib_root="%s"' % (ssl_root + r'\lib'))
-    if runtime == 'shared':
-        gn_args.append('owt_msvc_build_md=true')
-    else:
-        gn_args.append('owt_msvc_build_md=false')
+        gn_args.append('rtc_build_ssl=false')
+        gn_args.append('rtc_ssl_root="%s/include"' % ssl_root)
+        gn_args.append('libsrtp_ssl_root="%s/include"' % ssl_root)
     if msdk_root:
         if arch == 'x86':
             msdk_lib = msdk_root + r'\lib\win32'
@@ -86,6 +80,27 @@ def gngen(arch, ssl_root, msdk_root, quic_root, scheme, tests, runtime):
     else:
         gn_args.append('rtc_include_tests=false')
         gn_args.append('owt_include_tests=false')
+    if cg_server:
+        gn_args.append('rtc_enable_protobuf=false')
+        gn_args.append('rtc_enable_win_wgc=false')
+        gn_args.append('owt_cg_server=true')
+        gn_args.append('enable_libaom=false')
+    else:
+        gn_args.append('enable_libaom=true')
+    if cg_client:
+        gn_args.append('owt_cg_client=true')
+        gn_args.append('rtc_enable_protobuf=false')
+    if sio_root:
+        # If sio_root is not specified, conference SDK is not able to build.
+        gn_args.append('owt_sio_header_root="%s"' % (sio_root + r'\include'))
+    if ffmpeg_root:
+        gn_args.append('owt_ffmpeg_root="%s"'%(ffmpeg_root))
+    if ffmpeg_root or msdk_root or cg_server:
+        gn_args.append('rtc_use_h264=true')
+    if ffmpeg_root or msdk_root or cg_server:
+        gn_args.append('rtc_use_h265=true')
+    if fake_audio:
+        gn_args.append('rtc_include_internal_audio_device=false')
     flattened_args = ' '.join(gn_args)
     ret = subprocess.call(['gn.bat', 'gen', getoutputpath(arch, scheme), '--args=%s' % flattened_args],
                           cwd=HOME_PATH, shell=False)
@@ -100,37 +115,17 @@ def getoutputpath(arch, scheme):
 
 def ninjabuild(arch, scheme):
     out_path = getoutputpath(arch, scheme)
-    if subprocess.call(['ninja', '-C', out_path], cwd=HOME_PATH) != 0:
+    if subprocess.call(['ninja.bat', '-C', out_path], cwd=HOME_PATH) != 0:
         return False
     return True
 
 
-def _getlibs(arch, scheme, ssl_root):
-    '''Returns an array contains all .lib files' path
-    '''
-    result = []
-    owt_path = os.path.join(OUT_PATH, r'%s-%s\obj\talk\owt\owt.lib' % (scheme, arch))
-    result.append(owt_path)
-    ssl_lib_path = os.path.join(ssl_root, 'lib')
-    for root, dirs, files in os.walk(ssl_lib_path):
-        for file in files:
-            name, ext = os.path.splitext(file)
-            if ext == '.lib' and name not in LIB_BLACK_LIST and 'test' not in name:
-                result.append(os.path.abspath(os.path.join(root, file)))
-                print('Merged %s.lib' % name)
-            elif ext == '.lib':
-                print('Skip %s.lib' % name)
-    return result
-
-
-def _mergelibs(arch, scheme, ssl_root):
+def _copylibs(arch, scheme):
     out_lib = OUT_LIB % {'scheme': scheme}
     if os.path.exists(os.path.join(OUT_PATH, out_lib)):
         os.remove(os.path.join(OUT_PATH, out_lib))
-    libs = _getlibs(arch, scheme, ssl_root)
-    command = ['lib.exe', '/OUT:out\%s' % out_lib]
-    command.extend(libs)
-    subprocess.call(command, cwd=HOME_PATH)
+    owt_path = os.path.join(OUT_PATH, r'%s-%s\obj\talk\owt\owt.lib' % (scheme, arch))
+    shutil.copy(owt_path, os.path.join('out',out_lib))
 
 
 # Run unit tests on simulator. Return True if all tests are passed.
@@ -149,7 +144,6 @@ def runtest(arch, scheme):
 
 
 def gendocs():
-    print('start ninja file generatio!')
     cmd_path = os.path.join(HOME_PATH, r'talk\owt\docs\cpp')
     doc_path = os.path.join(cmd_path, r'html')
     if os.path.exists(doc_path):
@@ -185,10 +179,12 @@ def main():
     parser.add_argument('--arch', default='x86', dest='arch', choices=('x86', 'x64', 'arm64'),
                         help='Target architecture. Supported value: x86, x64')
     parser.add_argument('--runtime', default='shared', choices=('static', 'shared'),
-                        help='VC runtime linkage. Supported value: shared, static')
+                        help='VC runtime linkage. Currently not supported.')
     parser.add_argument('--ssl_root', help='Path for OpenSSL.')
     parser.add_argument('--msdk_root', help='Path for MSDK.')
-    parser.add_argument('--quic_root', help='Path to QUIC library')
+    parser.add_argument('--quic_root', help='Path to QUIC library. Not supported yet.')
+    parser.add_argument('--sio_root', required=False, help='Path to Socket.IO cpp. Headers in include sub-folder, libsioclient_tls.a in lib sub-folder.')
+    parser.add_argument('--ffmpeg_root', required=False, help='Path to to root directory of FFmpeg, with headers in include sub-folder, and libs in lib sub-folder. Binary libraries are not necessary for building OWT SDK, but it is needed by your application or tests when this argument is specified.')
     parser.add_argument('--scheme', default='debug', choices=('debug', 'release'),
                         help='Schemes for building. Supported value: debug, release')
     parser.add_argument('--gn_gen', default=False, action='store_true',
@@ -200,10 +196,28 @@ def main():
     parser.add_argument('--docs', default=False, action='store_true',
                         help='To generate the API document.')
     parser.add_argument('--output_path', help='Path to copy sdk.')
+    parser.add_argument('--cg_server', default=False,
+                        help='Build for cloud gaming server. This option is not intended to be used in general purpose. Setting to true may result unexpected behaviors. Default to false.', action='store_true')
+    parser.add_argument('--cloud_gaming', default=False,
+                        help='Deprecated. Please use cg_server instead.', action='store_true')
+    parser.add_argument('--cg_client', default=False,
+                        help='Build for cloud gaming client. This option is not intended to be used in general purpose. Setting to true may result unexpected behaviors. Default to false.', action='store_true')
+    parser.add_argument('--fake_audio', default=False, action='store_true',
+                        help='Use fake audio device.')
     opts = parser.parse_args()
+    if opts.cg_server and opts.cg_client:
+        print('Cannot build for both cloud gaming server and client.')
+        return 1
+    if opts.cloud_gaming:
+        opts.cg_server = True
+    if not opts.sio_root and not opts.cg_server and not opts.cg_client:
+        print("sio_root is missing.")
+        return 1
     if opts.ssl_root and not os.path.exists(os.path.expanduser(opts.ssl_root)):
         print('Invalid ssl_root.')
         return 1
+    if opts.ssl_root:
+        print('As ssl_root is specified, please link OpenSSL binaries into your application.')
     if opts.msdk_root and not os.path.exists(os.path.expanduser(opts.msdk_root)):
         print('Invalid msdk_root')
         return 1
@@ -211,14 +225,14 @@ def main():
         print('Invalid quic_root')
         return 1
     if opts.gn_gen:
-        if not gngen(opts.arch, opts.ssl_root, opts.msdk_root, opts.quic_root,
-                     opts.scheme, opts.tests, opts.runtime):
+        if not gngen(opts.arch, opts.sio_root, opts.ffmpeg_root, opts.ssl_root, opts.msdk_root, opts.quic_root,
+                     opts.scheme, opts.tests, opts.runtime, opts.cg_server, opts.cg_client, opts.fake_audio):
             return 1
     if opts.sdk:
         if not ninjabuild(opts.arch, opts.scheme):
             return 1
         else:
-            _mergelibs(opts.arch, opts.scheme, opts.ssl_root)
+            _copylibs(opts.arch, opts.scheme)
     if opts.tests:
         if not runtest(opts.arch, opts.scheme):
             return 1

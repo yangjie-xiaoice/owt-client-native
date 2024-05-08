@@ -2,20 +2,20 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
-#include "talk/owt/sdk/base/nativehandlebuffer.h"
-#include "talk/owt/sdk/base/win/d3d11va_h264_decoder.h"
+#include "talk/owt/sdk/base/win/d3d11_video_decoder.h"
 #include <algorithm>
 #include <limits>
-#include "mfxadapter.h"
+
+#include "system_wrappers/include/metrics.h"
+#include "talk/owt/sdk/base/mediautils.h"
+#include "talk/owt/sdk/base/nativehandlebuffer.h"
 #include "webrtc/api/video/color_space.h"
 #include "webrtc/api/video/i420_buffer.h"
 #include "webrtc/common_video/include/video_frame_buffer.h"
 #include "webrtc/modules/video_coding/codecs/h264/h264_color_space.h"
 #include "webrtc/rtc_base/checks.h"
-#include "webrtc/rtc_base/critical_section.h"
-#include "webrtc/rtc_base/keep_ref_until_done.h"
 #include "webrtc/rtc_base/logging.h"
-#include "system_wrappers/include/metrics.h"
+#include "webrtc/system_wrappers/include/clock.h"
 
 namespace owt {
 namespace base {
@@ -30,10 +30,10 @@ const size_t kVPlaneIndex = 2;
 static const int kMaxSideDataListSize = 20;
 
 // Used by histograms. Values of entries should not be changed.
-enum H264DecoderImplEvent {
-  kH264DecoderEventInit = 0,
-  kH264DecoderEventError = 1,
-  kH264DecoderEventMax = 16,
+enum D3D11VideoDecoderEvent {
+  kD3D11VideoDecoderEventInit = 0,
+  kD3D11VideoDecoderEventError = 1,
+  kD3D11VideoDecoderEventMax = 16,
 };
 
 }  // namespace
@@ -59,7 +59,7 @@ static enum AVPixelFormat get_hw_format(AVCodecContext* ctx,
   return AV_PIX_FMT_NONE;
 }
 
-H264DXVADecoderImpl::H264DXVADecoderImpl(ID3D11Device* external_device)
+D3D11VideoDecoder::D3D11VideoDecoder(ID3D11Device* external_device)
     : decoded_image_callback_(nullptr),
       has_reported_init_(false),
       has_reported_error_(false),
@@ -67,11 +67,11 @@ H264DXVADecoderImpl::H264DXVADecoderImpl(ID3D11Device* external_device)
   surface_handle_.reset(new D3D11VAHandle());
 }
 
-H264DXVADecoderImpl::~H264DXVADecoderImpl() {
+D3D11VideoDecoder::~D3D11VideoDecoder() {
   Release();
 }
 
-int H264DXVADecoderImpl::InitHwContext(AVCodecContext* ctx,
+int D3D11VideoDecoder::InitHwContext(AVCodecContext* ctx,
                                        const enum AVHWDeviceType type) {
   int err = 0;
   AVBufferRef* device_ref = NULL;
@@ -85,44 +85,6 @@ int H264DXVADecoderImpl::InitHwContext(AVCodecContext* ctx,
       D3D_FEATURE_LEVEL_11_1, D3D_FEATURE_LEVEL_11_0, D3D_FEATURE_LEVEL_10_1,
       D3D_FEATURE_LEVEL_10_1 };
 
-  mfxU8 headers[] = {0x00, 0x00, 0x00, 0x01, 0x67, 0x42, 0xE0, 0x0A, 0x96,
-                     0x52, 0x85, 0x89, 0xC8, 0x00, 0x00, 0x00, 0x01, 0x68,
-                     0xC9, 0x23, 0xC8, 0x00, 0x00, 0x00, 0x01, 0x09, 0x10};
-  mfxBitstream bs = {};
-  bs.Data = headers;
-  bs.DataLength = bs.MaxLength = sizeof(headers);
-
-  mfxStatus sts = MFX_ERR_NONE;
-  mfxU32 num_adapters;
-  sts = MFXQueryAdaptersNumber(&num_adapters);
-
-  if (sts != MFX_ERR_NONE) {
-    RTC_LOG(LS_ERROR) << "Failed to query adapter numbers.";
-    return -1;
-  }
-
-  std::vector<mfxAdapterInfo> display_data(num_adapters);
-  mfxAdaptersInfo adapters = {display_data.data(), mfxU32(display_data.size()),
-                              0u};
-  sts = MFXQueryAdaptersDecode(&bs, MFX_CODEC_AVC, &adapters);
-  if (sts != MFX_ERR_NONE) {
-    RTC_LOG(LS_ERROR) << "Failed to query adapter with hardware acceleration";
-    return -1;
-  }
-  mfxU32 adapter_idx = adapters.Adapters[0].Number;
-
-  hr = CreateDXGIFactory(__uuidof(IDXGIFactory2), (void**)(&m_pdxgi_factory_));
-  if (FAILED(hr)) {
-    RTC_LOG(LS_ERROR)
-        << "Failed to create dxgi factory for adatper enumeration.";
-    return -1;
-  }
-
-  hr = m_pdxgi_factory_->EnumAdapters(adapter_idx, &m_padapter_);
-  if (FAILED(hr)) {
-    RTC_LOG(LS_ERROR) << "Failed to enum adapter for specified adapter index.";
-    return -1;
-  }
   D3D_FEATURE_LEVEL feature_levels_out;
 
   device_ref = av_hwdevice_ctx_alloc(type);
@@ -135,8 +97,9 @@ int H264DXVADecoderImpl::InitHwContext(AVCodecContext* ctx,
   device_ctx = (AVHWDeviceContext*)device_ref->data;
   device_hwctx = (AVD3D11VADeviceContext*)device_ctx->hwctx;
 
-  hr = D3D11CreateDevice(m_padapter_, D3D_DRIVER_TYPE_UNKNOWN, nullptr,
-      creation_flags, feature_levels, sizeof(feature_levels) / sizeof(feature_levels[0]), D3D11_SDK_VERSION,
+  hr = D3D11CreateDevice(
+      nullptr, D3D_DRIVER_TYPE_HARDWARE, nullptr, creation_flags, feature_levels,
+      sizeof(feature_levels) / sizeof(feature_levels[0]), D3D11_SDK_VERSION,
       &device_hwctx->device, &feature_levels_out, &d3d11_device_context_);
   if (FAILED(hr)) {
     RTC_LOG(LS_ERROR) << "Failed to create D3d11 DEVICE for dxva decoding.";
@@ -186,7 +149,7 @@ fail:
   return err;
 }
 
-int H264DXVADecoderImpl::PrepareHwDecoder(webrtc::VideoCodecType codec_type) {
+int D3D11VideoDecoder::PrepareHwDecoder(webrtc::VideoCodecType codec_type) {
   int ret = 0;
   enum AVHWDeviceType type;
 
@@ -199,11 +162,13 @@ int H264DXVADecoderImpl::PrepareHwDecoder(webrtc::VideoCodecType codec_type) {
     }
   }
 
-  AVCodecID codec_id = codec_type == webrtc::VideoCodecType::kVideoCodecH264
-                           ? AV_CODEC_ID_H264
-                           : AV_CODEC_ID_HEVC;
+  auto codec_id = MediaUtils::GetFfmpegCodecId(codec_type);
+  if (!codec_id.has_value()) {
+    RTC_LOG(LS_ERROR) << "Unsupported codec type.";
+    return -1;
+  }
 
-  decoder = avcodec_find_decoder(codec_id);
+  decoder = avcodec_find_decoder(codec_id.value());
   if (!decoder) {
     RTC_LOG(LS_ERROR) << "Decoder not found by avcodec_find_decoder.";
     return -1;
@@ -243,35 +208,26 @@ int H264DXVADecoderImpl::PrepareHwDecoder(webrtc::VideoCodecType codec_type) {
   return 0;
 }
 
-int32_t H264DXVADecoderImpl::InitDecode(const webrtc::VideoCodec* codec_settings,
-                                    int32_t number_of_cores) {
+bool D3D11VideoDecoder::Configure(const Settings& settings) {
   ReportInit();
-  if (codec_settings &&
-      (codec_settings->codecType != webrtc::kVideoCodecH264 
-#ifdef WEBRTC_USE_H265
-      && codec_settings->codecType != webrtc::kVideoCodecH265)
-#endif
-  ) {
-    RTC_LOG(LS_ERROR) << "in H264DXVADecoderImpl: codec mismatch.";
-    return WEBRTC_VIDEO_CODEC_ERR_PARAMETER;
-  }
 
   // Release necessary in case of re-initializing.
   int32_t ret = Release();
   if (ret != WEBRTC_VIDEO_CODEC_OK) {
     ReportError();
-    return ret;
+    return false;
   }
 
-  ret = PrepareHwDecoder(codec_settings->codecType);
+  ret = PrepareHwDecoder(settings.codec_type());
   if (ret < 0) {
     RTC_LOG(LS_ERROR) << "Failed to prepare the hw decoder.";
-    return WEBRTC_VIDEO_CODEC_ERROR;
+    return false;
   }
-  return WEBRTC_VIDEO_CODEC_OK;
+  settings_ = settings;
+  return true;
 }
 
-int32_t H264DXVADecoderImpl::Release() {
+int32_t D3D11VideoDecoder::Release() {
   // Do we need to flush the decoder? Currently we don't.
   if (decoder_ctx != nullptr) {
     avcodec_free_context(&decoder_ctx);
@@ -284,13 +240,13 @@ int32_t H264DXVADecoderImpl::Release() {
   return WEBRTC_VIDEO_CODEC_OK;
 }
 
-int32_t H264DXVADecoderImpl::RegisterDecodeCompleteCallback(
+int32_t D3D11VideoDecoder::RegisterDecodeCompleteCallback(
     webrtc::DecodedImageCallback* callback) {
   decoded_image_callback_ = callback;
   return WEBRTC_VIDEO_CODEC_OK;
 }
 
-int32_t H264DXVADecoderImpl::Decode(const webrtc::EncodedImage& input_image,
+int32_t D3D11VideoDecoder::Decode(const webrtc::EncodedImage& input_image,
                                 bool /*missing_frames*/,
                                 int64_t /*render_time_ms*/) {
   if (!IsInitialized()) {
@@ -314,7 +270,7 @@ int32_t H264DXVADecoderImpl::Decode(const webrtc::EncodedImage& input_image,
   AVFrame* frame = nullptr;
   AVPacket packet;
   av_init_packet(&packet);
-  packet.data = input_image.mutable_data();
+  packet.data = input_image.GetEncodedData()->data();
 
   if (input_image.size() >
       static_cast<size_t>(std::numeric_limits<int>::max())) {
@@ -323,7 +279,7 @@ int32_t H264DXVADecoderImpl::Decode(const webrtc::EncodedImage& input_image,
   }
   packet.size = static_cast<int>(input_image.size());
 
-  GetSideData(input_image.mutable_data(), input_image.size(),
+  GetSideData(input_image.data(), input_image.size(),
               current_side_data_, current_cursor_data_);
   if (current_side_data_.size() > 0) {
     side_data_list_[input_image.Timestamp()] = current_side_data_;
@@ -357,8 +313,8 @@ int32_t H264DXVADecoderImpl::Decode(const webrtc::EncodedImage& input_image,
     // We get one frame from the decoder.
     if (frame != nullptr && frame->format == hw_pix_fmt) {
       ID3D11Texture2D* texture = (ID3D11Texture2D*)frame->data[0];
-      int width = frame->crop_right - frame->crop_left;
-      int height = frame->crop_bottom - frame->crop_top;
+      int width = frame->width;
+      int height = frame->height;
       int index = (intptr_t)frame->data[1];
       D3D11_TEXTURE2D_DESC texture_desc;
 
@@ -408,12 +364,13 @@ int32_t H264DXVADecoderImpl::Decode(const webrtc::EncodedImage& input_image,
         surface_handle_->cursor_data_size = cursor_data_size;
         surface_handle_->decode_start = decode_start_time;
         surface_handle_->decode_end = clock_->CurrentTime().ms_or(0);
-        surface_handle_->start_duration = input_image.bwe_stats_.start_duration_;
+        surface_handle_->start_duration =
+            input_image.bwe_stats_.start_duration_;
         surface_handle_->last_duration = input_image.bwe_stats_.last_duration_;
         surface_handle_->packet_loss = input_image.bwe_stats_.packets_lost_;
         surface_handle_->frame_size = input_image.size();
         rtc::scoped_refptr<owt::base::NativeHandleBuffer> buffer =
-          new rtc::RefCountedObject<owt::base::NativeHandleBuffer>(
+            rtc::make_ref_counted<owt::base::NativeHandleBuffer>(
                 (void*)surface_handle_.get(), width, height);
         webrtc::VideoFrame decoded_frame(buffer, input_image.Timestamp(), 0,
           webrtc::kVideoRotation_0);
@@ -433,29 +390,31 @@ fail:
 }
 
 // Helper function to extract the prefix-SEI.
-int64_t H264DXVADecoderImpl::GetSideData(const uint8_t* frame_data,
+int64_t D3D11VideoDecoder::GetSideData(const uint8_t* frame_data,
                                          size_t frame_size,
                                          std::vector<uint8_t>& side_data,
                                          std::vector<uint8_t>& cursor_data) {
   side_data.clear();
   if (frame_size < 24)  // with prefix-frame-num sei, frame size needs to be at
                         // least 24 bytes.
-    goto failed;
+    return -1;
 
   const uint8_t* head = frame_data;
   unsigned int payload_size = 0;
 
   if (head[0] != 0 || head[1] != 0 || head[2] != 0 || head[3] != 1) {
-    goto failed;
+    return -1;
   }
-  if ((head[4] & 0x1f) == 0x06) {
+
+  if (settings_.codec_type() == webrtc::kVideoCodecH264 &&
+      (head[4] & 0x1f) == 0x06) {
     if (head[5] == 0x05) { // user data unregistered.
       payload_size = head[6];
       if (payload_size > frame_size - 4 - 4 || payload_size < 17) //. 4-byte start code + 4 byte NAL HDR/Payload Type/Size/RBSP
-        goto failed;
+        return -1;
       for (int i = 7; i < 23; i++) {
         if (head[i] != frame_number_sei_guid[i - 7]) {
-          goto failed;
+          return -1;
         }
       }
       // Read the entire side-data payload
@@ -479,7 +438,7 @@ int64_t H264DXVADecoderImpl::GetSideData(const uint8_t* frame_data,
 
         for (int i = 0; i < 16; i++) {
           if (head[sei_idx] != cursor_data_sei_guid[i]) {
-            goto failed;
+            return -1;
           }
           sei_idx++;
         }
@@ -492,43 +451,93 @@ int64_t H264DXVADecoderImpl::GetSideData(const uint8_t* frame_data,
                              head + sei_idx + cursor_data_size);
         }
       }
+      return payload_size;
+    }
+  } else if (settings_.codec_type() == webrtc::kVideoCodecH265 &&
+             (head[4] & 0x7E) >> 1 == 0x27 && frame_size >= 25) {
+    // skip byte #5 and check byte #6
+    if (head[6] == 0x05) {
+      payload_size = head[7];
+      if (payload_size > frame_size - 4 - 5 ||
+          payload_size < 17) {  // 4-byte start code + 5 byte NAL HDR/Payload
+                                // Type/Size/RBSP
+        RTC_LOG(LS_INFO) << "Invalid payload size.";
+        return -1;
+      }
+      for (int i = 8; i < 24; i++) {
+        if (head[i] != frame_number_sei_guid[i - 8]) {
+          return -1;
+        }
+      }
+      // Read the entire side-data payload
+      for (unsigned int i = 0; i < payload_size - 16; i++)
+        side_data.push_back(head[i + 24]);
 
+      // Proceed with cursor data SEI, if any.
+      unsigned int sei_idx = 24 + payload_size - 16;
+      if (head[sei_idx] != 0x05) {
+        return payload_size;
+      } else {
+        sei_idx++;
+        unsigned int cursor_data_size = 0;
+        while (head[sei_idx] == 0xFF) {
+          cursor_data_size += head[sei_idx];
+          sei_idx++;
+        }
+        cursor_data_size += head[sei_idx];
+        cursor_data_size -= 16;
+        sei_idx++;
+
+        for (int i = 0; i < 16; i++) {
+          if (head[sei_idx] != cursor_data_sei_guid[i]) {
+            return -1;
+          }
+          sei_idx++;
+        }
+
+        if (cursor_data_size > 0) {
+          if (!cursor_data.empty()) {
+            cursor_data.clear();
+          }
+          cursor_data.insert(cursor_data.end(), head + sei_idx,
+                             head + sei_idx + cursor_data_size);
+        }
+      }
       return payload_size;
     }
   }
-failed:
-  return -1;
+  return payload_size;
 }
 
-const char* H264DXVADecoderImpl::ImplementationName() const {
+const char* D3D11VideoDecoder::ImplementationName() const {
   return "OWTD3D11VA";
 }
 
-bool H264DXVADecoderImpl::IsInitialized() const {
+bool D3D11VideoDecoder::IsInitialized() const {
   return decoder_ctx != nullptr;
 }
 
-void H264DXVADecoderImpl::ReportInit() {
+void D3D11VideoDecoder::ReportInit() {
   if (has_reported_init_)
     return;
-  RTC_HISTOGRAM_ENUMERATION("WebRTC.Video.H264DXVADecoderImpl.Event",
-                            kH264DecoderEventInit,
-                            kH264DecoderEventMax);
+  RTC_HISTOGRAM_ENUMERATION("WebRTC.Video.D3D11VideoDecoder.Event",
+                            kD3D11VideoDecoderEventInit,
+                            kD3D11VideoDecoderEventMax);
   has_reported_init_ = true;
 }
 
-void H264DXVADecoderImpl::ReportError() {
+void D3D11VideoDecoder::ReportError() {
   if (has_reported_error_)
     return;
-  RTC_HISTOGRAM_ENUMERATION("WebRTC.Video.H264DXVADecoderImpl.Event",
-                            kH264DecoderEventError,
-                            kH264DecoderEventMax);
+  RTC_HISTOGRAM_ENUMERATION("WebRTC.Video.D3D11VideoDecoder.Event",
+                            kD3D11VideoDecoderEventError,
+                            kD3D11VideoDecoderEventMax);
   has_reported_error_ = true;
 }
 
-std::unique_ptr<H264DXVADecoderImpl> H264DXVADecoderImpl::Create(
+std::unique_ptr<D3D11VideoDecoder> D3D11VideoDecoder::Create(
     cricket::VideoCodec format) {
-  return absl::make_unique<H264DXVADecoderImpl>(nullptr);
+  return absl::make_unique<D3D11VideoDecoder>(nullptr);
 }
 
 }  // namespace base

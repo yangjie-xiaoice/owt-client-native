@@ -13,7 +13,6 @@
 #include "talk/owt/sdk/include/cpp/owt/base/stream.h"
 #include "talk/owt/sdk/include/cpp/owt/base/exception.h"
 #include "talk/owt/sdk/include/cpp/owt/p2p/p2psignalingsenderinterface.h"
-#include "talk/owt/sdk/include/cpp/owt/p2p/p2psignalingreceiverinterface.h"
 #include "webrtc/sdk/media_constraints.h"
 #include "webrtc/rtc_base/strings/json.h"
 #include "webrtc/rtc_base/synchronization/mutex.h"
@@ -34,13 +33,14 @@ class P2PPeerConnectionChannelObserver {
   // Triggered when a new stream is added.
   virtual void OnStreamAdded(
       std::shared_ptr<RemoteStream> stream) = 0;
-  // Triggered when the WebRTC session is ended.
+  // Triggered when the PeerConnectionChannel is stopped.
   virtual void OnStopped(const std::string& remote_id) = 0;
+  // Triggered when the PeerConnection is closed.
+  virtual void OnPeerConnectionClosed(const std::string& remote_id) = 0;
 };
 // An instance of P2PPeerConnectionChannel manages a session for a specified
 // remote client.
-class P2PPeerConnectionChannel : public P2PSignalingReceiverInterface,
-                                 public PeerConnectionChannel {
+class P2PPeerConnectionChannel : public PeerConnectionChannel {
  public:
   explicit P2PPeerConnectionChannel(
       PeerConnectionChannelConfiguration configuration,
@@ -64,9 +64,8 @@ class P2PPeerConnectionChannel : public P2PSignalingReceiverInterface,
   // Remove a P2PPeerConnectionChannel observer. If the observer doesn't exist,
   // it will do nothing.
   void RemoveObserver(P2PPeerConnectionChannelObserver* observer);
-  // Implementation of P2PSignalingReceiverInterface. Handle signaling message
-  // received from remote side.
-  void OnIncomingSignalingMessage(const std::string& message) override;
+  // Handle signaling message received from remote side.
+  void OnIncomingSignalingMessage(const Json::Value& json_message);
   // Publish a local stream to remote user.
   void Publish(std::shared_ptr<LocalStream> stream,
                std::function<void()> on_success,
@@ -148,6 +147,7 @@ class P2PPeerConnectionChannel : public P2PSignalingReceiverInterface,
   // Publish and/or unpublish all streams in pending stream list.
   void DrainPendingStreams();
   void TriggerOnStopped();
+  void TriggerOnPeerConnectionClosed();
   void CheckWaitedList();  // Check pending streams and negotiation requests.
   void SendStop(std::function<void()> on_success,
                 std::function<void(std::unique_ptr<Exception>)> on_failure);
