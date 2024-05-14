@@ -27,6 +27,7 @@ namespace base {
 ///////////////////////////////////////////////////////////////////////
 class CustomizedFramesCapturer::CustomizedFramesThread
     : public rtc::Thread {
+  friend class CustomizedFramesCapturer;
  public:
   explicit CustomizedFramesThread(CustomizedFramesCapturer* capturer, int fps)
       : rtc::Thread(
@@ -49,8 +50,6 @@ class CustomizedFramesCapturer::CustomizedFramesThread
     // Stop() is called externally or Quit() is called by OnMessage().
     // Before returning, cleanup any thread-sensitive resources.
     if (capturer_) {
-      first_frame_time_ms_ = duration_cast<milliseconds>(steady_clock().now().time_since_epoch()).count();
-      next_frame_ += 1;
       capturer_->ReadFrame();
       rtc::Thread::Current()->PostTask([this] { TryReadFrame(); });
       rtc::Thread::Current()->ProcessMessages(kForever);
@@ -68,10 +67,12 @@ class CustomizedFramesCapturer::CustomizedFramesThread
 
   void TryReadFrame() {
     if (capturer_) {
-      next_frame_ += 1;
       capturer_->ReadFrame();
       int64_t now = duration_cast<milliseconds>(steady_clock().now().time_since_epoch()).count();
-      int64_t wait_ms = std::floor(waiting_time_ms_ * next_frame_ - (now - first_frame_time_ms_));
+      int64_t wait_ms = 0;
+      if (first_frame_time_ms_ != 0) {
+        wait_ms = std::floor(waiting_time_ms_ * next_frame_ - (now - first_frame_time_ms_));
+      }
       if (wait_ms > 0)
       {
         rtc::Thread::Current()->PostDelayedTask(
@@ -318,6 +319,11 @@ void CustomizedFramesCapturer::ReadFrame() {
     return;
   if (frame_generator_ != nullptr) {
     auto frame_size = frame_generator_->GetNextFrameSize();
+    if (frame_size == 0) {
+      RTC_DCHECK(false);
+      RTC_LOG(LS_ERROR) << "Failed to get video frame.";
+      return;
+    }
     AdjustFrameBuffer(frame_size);
     if (frame_generator_->GenerateNextFrame(frame_buffer_->MutableDataY(),
                                             frame_buffer_capacity_) !=
@@ -327,6 +333,12 @@ void CustomizedFramesCapturer::ReadFrame() {
       return;
     }
 
+    if (frames_generator_thread_ != nullptr) {
+      frames_generator_thread_->next_frame_ += 1;
+      if (frames_generator_thread_->first_frame_time_ms_ == 0) {
+        frames_generator_thread_->first_frame_time_ms_ = duration_cast<milliseconds>(steady_clock().now().time_since_epoch()).count();
+      }
+    }
     webrtc::VideoFrame capture_frame =
         webrtc::VideoFrame::Builder()
             .set_video_frame_buffer(frame_buffer_)
