@@ -320,7 +320,6 @@ void CustomizedFramesCapturer::ReadFrame() {
   if (frame_generator_ != nullptr) {
     auto frame_size = frame_generator_->GetNextFrameSize();
     if (frame_size == 0) {
-      RTC_DCHECK(false);
       RTC_LOG(LS_ERROR) << "Failed to get video frame.";
       return;
     }
