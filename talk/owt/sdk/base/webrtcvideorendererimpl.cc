@@ -11,6 +11,7 @@
 #endif
 #include "talk/owt/sdk/base/nativehandlebuffer.h"
 #include "talk/owt/sdk/base/webrtcvideorendererimpl.h"
+#include "talk/owt/sdk/base/customizedencoderbufferhandle.h"
 #if defined(WEBRTC_WIN)
 #include "talk/owt/sdk/base/win/d3dnativeframe.h"
 #include "talk/owt/sdk/include/cpp/owt/base/videorendererinterface.h"
@@ -77,7 +78,8 @@ void WebrtcVideoRendererImpl::OnFrame(const webrtc::VideoFrame& frame) {
   }
   VideoRendererType renderer_type = renderer_.Type();
   if (renderer_type != VideoRendererType::kI420 &&
-      renderer_type != VideoRendererType::kARGB)
+      renderer_type != VideoRendererType::kARGB &&
+      renderer_type != VideoRendererType::kENCODED)
     return;
   Resolution resolution(frame.width(), frame.height());
   if (renderer_type == VideoRendererType::kARGB) {
@@ -87,12 +89,28 @@ void WebrtcVideoRendererImpl::OnFrame(const webrtc::VideoFrame& frame) {
     std::unique_ptr<VideoBuffer> video_buffer(
         new VideoBuffer{buffer, resolution, VideoBufferType::kARGB});
     renderer_.RenderFrame(std::move(video_buffer));
-  } else {
+  } else if (renderer_type == VideoRendererType::kI420){
     uint8_t* buffer = new uint8_t[resolution.width * resolution.height * 3 / 2];
     webrtc::ConvertFromI420(frame, webrtc::VideoType::kI420, 0,
                             static_cast<uint8_t*>(buffer));
     std::unique_ptr<VideoBuffer> video_buffer(
         new VideoBuffer{buffer, resolution, VideoBufferType::kI420});
+    renderer_.RenderFrame(std::move(video_buffer));
+  } else if (renderer_type == VideoRendererType::kENCODED){
+    CustomizedEncoderBufferHandle2* encoder_buffer_handle =
+      reinterpret_cast<CustomizedEncoderBufferHandle2*>(
+        static_cast<owt::base::EncodedFrameBuffer2*>(
+          frame.video_frame_buffer().get())->native_handle());
+    if (encoder_buffer_handle == nullptr ||
+        encoder_buffer_handle->buffer_ == nullptr ||
+        encoder_buffer_handle->buffer_length_ == 0) {
+          RTC_LOG(LS_ERROR) << "Received invalid encoded frame.";
+    }
+    uint8_t* buffer = new uint8_t[encoder_buffer_handle->buffer_length_];
+    memcpy(buffer, encoder_buffer_handle->buffer_, encoder_buffer_handle->buffer_length_);
+    std::unique_ptr<VideoBuffer> video_buffer(
+      new VideoBuffer{buffer, resolution, VideoBufferType::kENCODED}
+    );
     renderer_.RenderFrame(std::move(video_buffer));
   }
 }

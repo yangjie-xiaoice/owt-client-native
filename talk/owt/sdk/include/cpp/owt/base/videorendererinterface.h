@@ -21,11 +21,13 @@ enum class VideoBufferType {
   kI420,
   kARGB,
   kD3D11,  // Format self-described.
+  kENCODED,
 };
 enum class VideoRendererType {
   kI420,
   kARGB,
   kD3D11,  // Format self-described.
+  kENCODED,
 };
 
 
@@ -54,10 +56,15 @@ struct OWT_EXPORT VideoBuffer {
   // TODO: Consider add another field for native handler.
   /// Pointer to video buffer or native handler.
   uint8_t* buffer;
+  size_t buffer_length;
   /// Resolution for the Video buffer
   Resolution resolution;
   // Buffer type
   VideoBufferType type;
+  VideoBuffer(uint8_t *buffer_, const Resolution &resolution_, VideoBufferType type_)
+    : buffer(buffer_), buffer_length(0), resolution(resolution_), type(type_){}
+  VideoBuffer(uint8_t *buffer_, size_t buffer_length_, const Resolution &resolution_, VideoBufferType type_)
+    : buffer(buffer_), buffer_length(buffer_length_), resolution(resolution_), type(type_){}
   ~VideoBuffer() {
     if (type != VideoBufferType::kD3D11)
       delete[] buffer;

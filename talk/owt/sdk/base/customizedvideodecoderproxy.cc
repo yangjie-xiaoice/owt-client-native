@@ -4,6 +4,7 @@
 #include "talk/owt/sdk/base/customizedvideodecoderproxy.h"
 #include "talk/owt/sdk/include/cpp/owt/base/commontypes.h"
 #include "talk/owt/sdk/include/cpp/owt/base/videodecoderinterface.h"
+#include "talk/owt/sdk/base/customizedencoderbufferhandle.h"
 namespace owt {
 namespace base {
 
@@ -24,6 +25,7 @@ CustomizedVideoDecoderProxy::CustomizedVideoDecoderProxy(VideoCodecType type,
 
 CustomizedVideoDecoderProxy::~CustomizedVideoDecoderProxy() {
   if (external_decoder_) {
+    external_decoder_->UnRegistDecodedCallback();
     delete external_decoder_;
     external_decoder_ = nullptr;
   }
@@ -38,6 +40,7 @@ bool CustomizedVideoDecoderProxy::Configure(const Settings& codec_settings) {
       !external_decoder_->InitDecodeContext(video_codec_map[codec_type_])) {
     return false;
   }
+  external_decoder_->RegistDecodeCallback(this);
   return true;
 }
 
@@ -82,6 +85,29 @@ int32_t CustomizedVideoDecoderProxy::Release() {
 
 const char* CustomizedVideoDecoderProxy::ImplementationName() const {
   return "CustomizedDecoder";
+}
+
+void CustomizedVideoDecoderProxy::OnVideoDecodedFrame(VideoDecodedFrame frame) {
+  auto video_decoded_type = external_decoder_->Type();
+  if (video_decoded_type == VideoDecodedType::KH264 ||
+      video_decoded_type == VideoDecodedType::kVP8 ||
+      video_decoded_type == VideoDecodedType::kVP9) {
+        CustomizedEncoderBufferHandle2* encoder_context = new CustomizedEncoderBufferHandle2;
+        uint8_t* frame_buffer = new uint8_t[frame.length];
+        memcpy(frame_buffer, frame.buffer, frame.length);
+
+        encoder_context->buffer_ = frame_buffer;
+        encoder_context->buffer_length_ = frame.length;
+
+        rtc::scoped_refptr<owt::base::EncodedFrameBuffer2> rtc_buffer =
+            rtc::make_ref_counted<owt::base::EncodedFrameBuffer2>(encoder_context);
+        webrtc::VideoFrame decoded_frame(rtc_buffer, 0, frame.time_stamp, webrtc::kVideoRotation_0);
+        decoded_image_callback_->Decoded(decoded_frame);
+  } else if (video_decoded_type == VideoDecodedType::kI420) {
+    // TODO 暂不支持
+  } else if (video_decoded_type == VideoDecodedType::kARGB) {
+    // TODO 暂不支持
+  }
 }
 
 std::unique_ptr<CustomizedVideoDecoderProxy>

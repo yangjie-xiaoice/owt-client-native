@@ -13,7 +13,7 @@
 namespace owt {
 namespace base {
 using namespace webrtc;
-class CustomizedVideoDecoderProxy : public VideoDecoder {
+class CustomizedVideoDecoderProxy : public VideoDecoder, public VideoFrameDecodedCallback {
  public:
   static std::unique_ptr<CustomizedVideoDecoderProxy> Create(
       VideoCodecType type,
@@ -29,6 +29,8 @@ class CustomizedVideoDecoderProxy : public VideoDecoder {
       DecodedImageCallback* callback) override;
   int32_t Release() override;
   const char* ImplementationName() const override;
+
+  void OnVideoDecodedFrame(VideoDecodedFrame frame) override;
  private:
   webrtc::VideoCodec codec_settings_;
   VideoCodecType codec_type_;

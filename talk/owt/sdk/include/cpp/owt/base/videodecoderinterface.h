@@ -20,6 +20,30 @@ struct OWT_EXPORT VideoEncodedFrame {
   /// Key frame flag
   bool is_key_frame;
 };
+
+struct OWT_EXPORT VideoDecodedFrame {
+  const uint8_t *buffer;
+  size_t length;
+  uint32_t time_stamp;
+  bool is_key_frame;
+  int width;
+  int heigth;
+};
+
+class VideoFrameDecodedCallback {
+public:
+  virtual void OnVideoDecodedFrame(VideoDecodedFrame frame) = 0;
+
+};
+
+enum class VideoDecodedType {
+  kI420,  // 暂不支持
+  kARGB,  // 暂不支持
+  kVP8,
+  kVP9,
+  KH264,
+};
+
 /**
  @brief Video decoder interface
  @details Encoded frames will be passed for further customized decoding
@@ -50,6 +74,11 @@ class OWT_EXPORT VideoDecoderInterface {
   /**
    @brief This function generates the customized decoder for each peer connection
    */
+  virtual void RegistDecodedCallback(VideoFrameDecodedCallback *callback) = 0;
+  virtual void UnRegistDecodedCallback() = 0;
+
+  virtual VideoDecodedType Type() = 0;
+
   virtual VideoDecoderInterface* Copy() = 0;
 };
 }
