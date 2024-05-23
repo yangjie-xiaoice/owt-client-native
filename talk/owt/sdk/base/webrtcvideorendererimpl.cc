@@ -17,6 +17,7 @@
 #include "talk/owt/sdk/include/cpp/owt/base/videorendererinterface.h"
 #endif
 #include "webrtc/common_video/libyuv/include/webrtc_libyuv.h"
+#include "webrtc/rtc_base/logging.h"
 
 namespace owt {
 namespace base {

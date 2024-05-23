@@ -5,7 +5,6 @@
 #include "talk/owt/sdk/include/cpp/owt/base/commontypes.h"
 #include "talk/owt/sdk/include/cpp/owt/base/videodecoderinterface.h"
 #include "talk/owt/sdk/base/customizedencoderbufferhandle.h"
-#include "webrtc/rtc_base/logging.h"
 namespace owt {
 namespace base {
 
