@@ -89,7 +89,8 @@ const char* CustomizedVideoDecoderProxy::ImplementationName() const {
 
 void CustomizedVideoDecoderProxy::OnVideoDecodedFrame(VideoDecodedFrame frame) {
   auto video_decoded_type = external_decoder_->Type();
-  if (video_decoded_type == VideoDecodedType::KH264 ||
+  if (video_decoded_type == VideoDecodedType::kH264 ||
+      video_decoded_type == VideoDecodedType::kH265 ||
       video_decoded_type == VideoDecodedType::kVP8 ||
       video_decoded_type == VideoDecodedType::kVP9) {
         CustomizedEncoderBufferHandle2* encoder_context = new CustomizedEncoderBufferHandle2;

@@ -27,7 +27,7 @@ struct OWT_EXPORT VideoDecodedFrame {
   uint32_t time_stamp;
   bool is_key_frame;
   int width;
-  int heigth;
+  int height;
 };
 
 class VideoFrameDecodedCallback {
@@ -41,7 +41,9 @@ enum class VideoDecodedType {
   kARGB,  // 暂不支持
   kVP8,
   kVP9,
-  KH264,
+  kH264,
+  kH265,
+  kUnknown,
 };
 
 /**
