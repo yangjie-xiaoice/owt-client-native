@@ -40,7 +40,7 @@ bool CustomizedVideoDecoderProxy::Configure(const Settings& codec_settings) {
       !external_decoder_->InitDecodeContext(video_codec_map[codec_type_])) {
     return false;
   }
-  external_decoder_->RegistDecodeCallback(this);
+  external_decoder_->RegistDecodedCallback(this);
   return true;
 }
 
