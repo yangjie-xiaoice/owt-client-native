@@ -58,7 +58,7 @@ int32_t CustomizedVideoDecoderProxy::Decode(const EncodedImage& input_image,
   // Obtain the |video_frame| containing the decoded image.
   // decoded_image_callback_->Decoded(video_frame);
   if (external_decoder_) {
-    std::unique_ptr<VideoEncodedFrame> frame(new VideoEncodedFrame{input_image.data(), input_image.size(), input_image.Timestamp(), input_image._frameType == webrtc::VideoFrameType::kVideoFrameKey});
+    std::unique_ptr<VideoEncodedFrame> frame(new VideoEncodedFrame{input_image.data(), input_image.size(), input_image.Timestamp(), render_time_ms, input_image._frameType == webrtc::VideoFrameType::kVideoFrameKey});
     if (external_decoder_->OnEncodedFrame(std::move(frame))) {
       return WEBRTC_VIDEO_CODEC_OK;
     }
@@ -102,7 +102,7 @@ void CustomizedVideoDecoderProxy::OnVideoDecodedFrame(VideoDecodedFrame frame) {
 
         rtc::scoped_refptr<owt::base::EncodedFrameBuffer2> rtc_buffer =
             rtc::make_ref_counted<owt::base::EncodedFrameBuffer2>(encoder_context);
-        webrtc::VideoFrame decoded_frame(rtc_buffer, 0, frame.time_stamp, webrtc::kVideoRotation_0);
+        webrtc::VideoFrame decoded_frame(rtc_buffer, frame.rtp_timestamp, frame.render_timestamp, webrtc::kVideoRotation_0);
         decoded_image_callback_->Decoded(decoded_frame);
   } else if (video_decoded_type == VideoDecodedType::kI420) {
     // TODO 暂不支持

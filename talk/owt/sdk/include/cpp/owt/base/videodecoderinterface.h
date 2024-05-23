@@ -16,7 +16,8 @@ struct OWT_EXPORT VideoEncodedFrame {
   /// Encoded frame buffer length
   size_t length;
   /// Frame timestamp (90kHz).
-  uint32_t time_stamp;
+  int64_t rtp_timestamp;
+  int64_t render_timestamp;
   /// Key frame flag
   bool is_key_frame;
 };
@@ -24,7 +25,8 @@ struct OWT_EXPORT VideoEncodedFrame {
 struct OWT_EXPORT VideoDecodedFrame {
   const uint8_t *buffer;
   size_t length;
-  uint32_t time_stamp;
+  int64_t rtp_timestamp;
+  int64_t render_timestamp;
   bool is_key_frame;
   int width;
   int height;
