@@ -99,6 +99,8 @@ void CustomizedVideoDecoderProxy::OnVideoDecodedFrame(VideoDecodedFrame frame) {
 
         encoder_context->buffer_ = frame_buffer;
         encoder_context->buffer_length_ = frame.length;
+        encoder_context->width_ = frame.width;
+        encoder_context->height_ = frame.height;
 
         rtc::scoped_refptr<owt::base::EncodedFrameBuffer2> rtc_buffer =
             rtc::make_ref_counted<owt::base::EncodedFrameBuffer2>(encoder_context);
