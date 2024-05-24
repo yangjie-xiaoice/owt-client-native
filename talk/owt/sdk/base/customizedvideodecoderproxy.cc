@@ -58,7 +58,7 @@ int32_t CustomizedVideoDecoderProxy::Decode(const EncodedImage& input_image,
   // Obtain the |video_frame| containing the decoded image.
   // decoded_image_callback_->Decoded(video_frame);
   if (external_decoder_) {
-    std::unique_ptr<VideoEncodedFrame> frame(new VideoEncodedFrame{input_image.data(), input_image.size(), input_image.Timestamp(), render_time_ms, input_image._frameType == webrtc::VideoFrameType::kVideoFrameKey});
+    std::unique_ptr<VideoEncodedFrame> frame(new VideoEncodedFrame{input_image.data(), input_image.size(), input_image.Timestamp(), 0, input_image._frameType == webrtc::VideoFrameType::kVideoFrameKey});
     if (external_decoder_->OnEncodedFrame(std::move(frame))) {
       return WEBRTC_VIDEO_CODEC_OK;
     }
