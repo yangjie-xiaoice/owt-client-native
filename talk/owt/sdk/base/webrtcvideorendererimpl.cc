@@ -85,10 +85,11 @@ void WebrtcVideoRendererImpl::OnFrame(const webrtc::VideoFrame& frame) {
           encoder_buffer_handle->buffer_length_ == 0) {
             RTC_LOG(LS_ERROR) << "Received invalid encoded frame.";
       }
-      uint8_t* buffer = new uint8_t[encoder_buffer_handle->buffer_length_];
-      memcpy(buffer, encoder_buffer_handle->buffer_, encoder_buffer_handle->buffer_length_);
+      size_t buffer_length = encoder_buffer_handle->buffer_length_;
+      uint8_t* buffer = new uint8_t[buffer_length];
+      memcpy(buffer, encoder_buffer_handle->buffer_, buffer_length);
       std::unique_ptr<VideoBuffer> video_buffer(
-        new VideoBuffer{buffer, resolution, VideoBufferType::kENCODED}
+        new VideoBuffer{buffer, buffer_length, resolution, VideoBufferType::kENCODED}
       );
       renderer_.RenderFrame(std::move(video_buffer));
     }
@@ -101,18 +102,20 @@ void WebrtcVideoRendererImpl::OnFrame(const webrtc::VideoFrame& frame) {
     return;
   Resolution resolution(frame.width(), frame.height());
   if (renderer_type == VideoRendererType::kARGB) {
-    uint8_t* buffer = new uint8_t[resolution.width * resolution.height * 4];
+    size_t buffer_length = resolution.width * resolution.height * 4;
+    uint8_t* buffer = new uint8_t[buffer_length];
     webrtc::ConvertFromI420(frame, webrtc::VideoType::kARGB, 0,
                             static_cast<uint8_t*>(buffer));
     std::unique_ptr<VideoBuffer> video_buffer(
-        new VideoBuffer{buffer, resolution, VideoBufferType::kARGB});
+        new VideoBuffer{buffer, buffer_length, resolution, VideoBufferType::kARGB});
     renderer_.RenderFrame(std::move(video_buffer));
   } else if (renderer_type == VideoRendererType::kI420){
-    uint8_t* buffer = new uint8_t[resolution.width * resolution.height * 3 / 2];
+    size_t buffer_length = resolution.width * resolution.height * 3 / 2;
+    uint8_t* buffer = new uint8_t[buffer_length];
     webrtc::ConvertFromI420(frame, webrtc::VideoType::kI420, 0,
                             static_cast<uint8_t*>(buffer));
     std::unique_ptr<VideoBuffer> video_buffer(
-        new VideoBuffer{buffer, resolution, VideoBufferType::kI420});
+        new VideoBuffer{buffer, buffer_length, resolution, VideoBufferType::kI420});
     renderer_.RenderFrame(std::move(video_buffer));
   }
 }
