@@ -74,6 +74,7 @@ void WebrtcVideoRendererImpl::OnFrame(const webrtc::VideoFrame& frame) {
 
     renderer_.RenderFrame(std::move(video_buffer));
 #else
+    VideoRendererType renderer_type = renderer_.Type();
     if (renderer_type == VideoRendererType::kENCODED){
       Resolution resolution(frame.width(), frame.height());
       CustomizedEncoderBufferHandle2* encoder_buffer_handle =
