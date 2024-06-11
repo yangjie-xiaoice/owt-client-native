@@ -33,6 +33,11 @@ class ConferenceSocketSignalingChannel
       const std::string& token,
       std::function<void(sio::message::ptr room_info)> on_success,
       std::function<void(std::unique_ptr<Exception>)> on_failure);
+  virtual void Connect(
+      const std::string& token,
+      const std::map<std::string, std::string> &query,
+      std::function<void(sio::message::ptr room_info)> on_success,
+      std::function<void(std::unique_ptr<Exception>)> on_failure);
   // Send publish or subscribe message to MCU.
   // If it publishes a stream, label should be MediaStream's label.
   // If it subscribe a stream, label should be nullptr.

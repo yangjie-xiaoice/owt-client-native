@@ -281,6 +281,11 @@ class OWT_EXPORT ConferenceClient final
       const std::string& token,
       std::function<void(std::shared_ptr<ConferenceInfo>)> on_success,
       std::function<void(std::unique_ptr<Exception>)> on_failure);
+  void Join(
+      const std::string& token,
+      const std::map<std::string, std::string> &query,
+      std::function<void(std::shared_ptr<ConferenceInfo>)> on_success,
+      std::function<void(std::unique_ptr<Exception>)> on_failure);
   /**
     @brief Leave current conference.
   */

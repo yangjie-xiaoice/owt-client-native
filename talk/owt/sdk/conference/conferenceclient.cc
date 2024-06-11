@@ -366,6 +366,15 @@ void ConferenceClient::Join(
     const std::string& token,
     std::function<void(std::shared_ptr<ConferenceInfo>)> on_success,
     std::function<void(std::unique_ptr<Exception>)> on_failure) {
+  std::map<std::string, std::string> query;
+  Join(token, query, on_success, on_failure);
+}
+
+void ConferenceClient::Join(
+    const std::string& token,
+    const std::map<std::string, std::string>& query,
+    std::function<void(std::shared_ptr<ConferenceInfo>)> on_success,
+    std::function<void(std::unique_ptr<Exception>)> on_failure) {
   if (signaling_channel_connected_) {
     if (on_failure != nullptr) {
       event_queue_->PostTask([on_failure]() {
@@ -386,6 +395,7 @@ void ConferenceClient::Join(
 
   signaling_channel_->Connect(
       token_base64,
+      query,
       [=](sio::message::ptr info) {
         signaling_channel_connected_ = true;
         // Get current user's participantId, user ID and role and fill in the

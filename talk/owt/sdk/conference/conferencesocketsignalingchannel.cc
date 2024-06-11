@@ -92,7 +92,15 @@ void ConferenceSocketSignalingChannel::RemoveObserver(
                    observers_.end());
 }
 void ConferenceSocketSignalingChannel::Connect(
+      const std::string& token,
+      std::function<void(sio::message::ptr room_info)> on_success,
+      std::function<void(std::unique_ptr<Exception>)> on_failure) {
+  std::map<std::string, std::string> query;
+  Connect(token, query, on_success, on_failure);
+}
+void ConferenceSocketSignalingChannel::Connect(
     const std::string& token,
+    const std::map<std::string, std::string> &query,
     std::function<void(sio::message::ptr room_info)> on_success,
     std::function<void(std::unique_ptr<Exception>)> on_failure) {
   if (!StringUtils::IsBase64EncodedString(token)) {
@@ -302,7 +310,6 @@ void ConferenceSocketSignalingChannel::Connect(
           }));
   // Store |on_failure| so it can be invoked if connect failed.
   connect_failure_callback_ = on_failure;
-  std::map<std::string,std::string> query = {{"rtcToken": token}};
   socket_client_->connect(scheme.append(host), query);
 }
 void ConferenceSocketSignalingChannel::Disconnect(
