@@ -302,7 +302,8 @@ void ConferenceSocketSignalingChannel::Connect(
           }));
   // Store |on_failure| so it can be invoked if connect failed.
   connect_failure_callback_ = on_failure;
-  socket_client_->connect(scheme.append(host));
+  std::map<std::string,std::string> query = {{"rtcToken": token}};
+  socket_client_->connect(scheme.append(host), query);
 }
 void ConferenceSocketSignalingChannel::Disconnect(
     std::function<void()> on_success,
