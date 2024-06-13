@@ -136,7 +136,7 @@ void ConferenceSocketSignalingChannel::Connect(
     return;
   }
   bool secure = false;
-  rtc::GetBoolFormJsonObject(json_token, "secure", &secure);
+  rtc::GetBoolFromJsonObject(json_token, "secure", &secure);
   std::string scheme(secure ? "https://" : "http://");
   std::string host;
   rtc::GetStringFromJsonObject(json_token, "host", &host);
