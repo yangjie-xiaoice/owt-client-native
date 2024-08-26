@@ -40,5 +40,6 @@ AudioProcessingSettings GlobalConfiguration::audio_processing_settings_ = {
 bool GlobalConfiguration::pre_decode_dump_enabled_ = false;
 bool GlobalConfiguration::post_encode_dump_enabled_ = false;
 bool GlobalConfiguration::video_super_resolution_enabled_ = false;
+bool GlobalConfiguration::frame_dropper_disabled_ = false;
 }  // namespace base
 }

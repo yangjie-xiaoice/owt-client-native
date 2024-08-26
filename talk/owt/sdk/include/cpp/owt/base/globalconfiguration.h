@@ -281,6 +281,18 @@ class OWT_EXPORT GlobalConfiguration {
     audio_processing_settings_.NSEnabled = enabled;
   }
 
+  /**
+    @brief This function gets the flag indicating whether frame dropper is disabled or not.
+    @return Boolean true for explicitly disabled.
+    */
+  static bool GetFrameDropperDisabled() { return frame_dropper_disabled_; }
+
+  static void SetFrameDropperDisabled(bool disabled) {
+    frame_dropper_disabled_ = disabled;
+  }
+
+  static bool frame_dropper_disabled_;
+
  private:
   GlobalConfiguration() {}
   virtual ~GlobalConfiguration() {}
