@@ -159,6 +159,10 @@ void PeerConnectionDependencyFactory::
   field_trial_ += "OWT-Bwe-RateLimits/start:" + std::to_string(start_bitrate) + ",min:" +
                   std::to_string(min_bitrate) + ",max:" +
                   std::to_string(max_bitrate) + "/";
+  bool frame_dropper_disabled_ = GlobalConfiguration::GetFrameDropperDisabled();
+  if (frame_dropper_disabled_) {
+    field_trial_ += "WebRTC-FrameDropper/Disabled/";
+  }
   webrtc::field_trial::InitFieldTrialsFromString(field_trial_.c_str());
   if (!rtc::InitializeSSL()) {
     RTC_LOG(LS_ERROR) << "Failed to initialize SSL.";
